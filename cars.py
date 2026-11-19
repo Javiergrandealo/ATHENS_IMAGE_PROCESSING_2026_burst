@@ -9,11 +9,13 @@ import imageio.v3 as iio
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
-from scipy.ndimage import gaussian_filter, map_coordinates, maximum_filter, minimum_filter
+from scipy.ndimage import (gaussian_filter, map_coordinates, maximum_filter,
+                           minimum_filter)
 from scipy.spatial.distance import cdist
 
-IMAGE_1_PATH = Path('images/sift_1.jpg')
-IMAGE_2_PATH = Path('images/sift_2.jpg')
+IMAGE_1_PATH = Path('cars_r/cars-0.png')
+IMAGE_2_PATH = Path('cars_r/cars-1.png')
+
 
 
 def read_rgb_image(path: str | Path) -> np.ndarray:
@@ -33,6 +35,7 @@ def read_rgb_image(path: str | Path) -> np.ndarray:
     if rgb.ndim != 3 or rgb.shape[2] != 3 or rgb.dtype != np.uint8:
         raise ValueError(f'Expected an 8-bit RGB image at {path}; got {rgb.shape}/{rgb.dtype}.')
     return rgb
+
 
 
 def to_grayscale(rgb: np.ndarray) -> np.ndarray:
@@ -283,7 +286,7 @@ def plot_matches(rgb1: np.ndarray, rgb2: np.ndarray,
     ax.axis('off')
     plt.tight_layout()
     plt.show()
-
+    
 
 def plot_registration(rgb1: np.ndarray, rgb2: np.ndarray,
                       H: np.ndarray | None) -> None:
@@ -320,6 +323,41 @@ def plot_registration(rgb1: np.ndarray, rgb2: np.ndarray,
         ax.axis('off')
     plt.tight_layout()
     plt.show()
+
+
+
+def pairwise_registration(rgb1: np.ndarray, rgb2: np.ndarray,
+                      H: np.ndarray | None) -> np.ndarray | None:
+    """Show the homography-warped image 1 beside image 2 and their overlay.
+
+    Parameters
+    ----------
+    rgb1, rgb2 : np.ndarray
+        Original images, shapes (H1,W1,3) and (H2,W2,3), dtype uint8.
+    H : np.ndarray or None
+        Homography shape (3,3), mapping image 1 into image 2,
+        or None if registration failed.
+
+    Returns
+    -------
+    np.ndarray
+        The combined registered image.
+        Displays a three-panel Matplotlib figure (or a failure message).
+    """
+    img_combined = None
+    if H is None:
+        print('Registration unavailable: no robust homography was estimated.')
+        return img_combined
+    h2, w2 = rgb2.shape[:2]
+    warped = cv2.warpPerspective(rgb1, H, (w2, h2))
+    valid = cv2.warpPerspective(np.full(rgb1.shape[:2], 255, dtype=np.uint8),
+                                H, (w2, h2)) > 0
+    overlay = rgb2.astype(np.float64)
+    overlay[valid] = (0.5 * warped[valid].astype(np.float64) +
+                      0.5 * rgb2[valid].astype(np.float64))
+    img_combined=overlay.astype(np.uint8)
+
+    return img_combined
 
 
 def print_registration_summary(result: RegistrationResult, label: str = '') -> None:
@@ -425,3 +463,65 @@ def compare_gray(images: Sequence[np.ndarray], titles: Sequence[str], *,
         image_histogram(axes[1, i], image, bins=bins)
     plt.tight_layout()
     plt.show()
+
+""" 
+Main code
+"""
+lst = []
+for i in range(0, 67):
+    path = Path(f'cars_r/cars-{i}.png')
+    lst.append(read_rgb_image(path))
+    
+
+# Build the registration tree from the bottom up.
+# At each level, every pair becomes one node in the next level.
+registration_tree = [lst]
+level = lst
+level_number = 0
+
+while len(level) > 1:
+    next_level = []
+
+    i = 0
+    while i + 1 < len(level):
+        reference = reference_sift_pipeline(
+            to_grayscale(level[i]),
+            to_grayscale(level[i + 1]),
+        )
+        next_pair = pairwise_registration(
+            level[i],
+            level[i + 1],
+            reference.homography,
+        )
+
+        if next_pair is None:
+            raise RuntimeError(
+                f'Registration unavailable at level {level_number}: '
+                f'pair ({i}, {i + 1})'
+            )
+
+        next_level.append(next_pair)
+        # To display all intermediate registered images, uncomment:
+        # plt.imshow(next_pair)
+        # plt.title(
+        #     f'Registered overlay — level {level_number}, '
+        #     f'node pair ({i}, {i + 1})'
+        # )
+        # plt.show()
+        i += 2
+
+    # An unmatched image is promoted unchanged to the next level.
+    if i < len(level):
+        next_level.append(level[i])
+
+    registration_tree.append(next_level)
+    level = next_level
+    level_number += 1
+
+pairs = level
+
+# Display only the image left after all levels.
+final_image = pairs[0]
+plt.imshow(final_image)
+plt.title('Registered overlay — final image')
+plt.show()
