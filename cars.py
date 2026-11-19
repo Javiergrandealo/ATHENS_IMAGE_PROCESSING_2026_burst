@@ -302,6 +302,27 @@ def plot_registration_process(
     """Report one sequential registration step."""
     del rgb1, rgb2
     print_registration_summary(result, label)
+    
+def linear_to_srgb(values: np.ndarray) -> np.ndarray:
+    """Encode linear-light values for standard sRGB display.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Linear-light values (usually shape (H, W) or (H, W, 3)).
+        Values outside [0, 1] will be clipped.
+
+    Returns
+    -------
+    encoded : np.ndarray
+        sRGB-encoded values in [0, 1], same shape as ``values``,
+        dtype float64.
+    """
+    values = np.clip(np.asarray(values, dtype=np.float64), 0.0, 1.0)
+    encoded = np.where(values <= 0.0031308,
+                       12.92 * values,
+                       1.055 * values ** (1.0 / 2.4) - 0.055)
+    return encoded
 
 
 def show_gray(ax: Axes, image: np.ndarray, title: str = '',
