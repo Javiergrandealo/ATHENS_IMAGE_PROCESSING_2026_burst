@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.patches import Circle
+from random import shuffle
 
 
 
@@ -524,6 +525,8 @@ def main() -> None:
         key=lambda path: int(path.stem.split('-')[1]),
     )
     images = [read_rgb_image(path) for path in image_paths]
+    # random.seed(42)  # for reproducibility
+    # shuffle(images)   # shuffle images
 
     print(f'Loaded {len(images)} images.')
     first_reference = reference_sift_pipeline(
