@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from random import shuffle
 
 import cv2
 import imageio.v3 as iio
@@ -10,8 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.patches import Circle
-from random import shuffle
-
 
 
 def read_rgb_image(path: str | Path) -> np.ndarray:
@@ -405,6 +404,26 @@ def compare_gray(images: Sequence[np.ndarray], titles: Sequence[str], *,
     plt.tight_layout()
     plt.show()
 
+def fix_brighness(lst):
+    for i in range(len(lst)):
+        lst[i]=cv2.cvtColor(lst[i], cv2.COLOR_RGB2HSV)
+        h, s, v = cv2.split(lst[i])
+        v= cv2.equalizeHist(v)
+        lst[i]=cv2.merge((h, s, v))
+        lst[i]=cv2.cvtColor(lst[i], cv2.COLOR_HSV2RGB)
+    return lst
+
+def fix_brighness2(lst):
+    for i in range(len(lst)):
+        lst[i]=cv2.cvtColor(lst[i], cv2.COLOR_RGB2HSV)
+        h, s, v = cv2.split(lst[i])
+        clahe= cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl1= clahe.apply(v)
+        v=cl1
+        lst[i]=cv2.merge((h, s, v))
+        lst[i]=cv2.cvtColor(lst[i], cv2.COLOR_HSV2RGB)
+    return lst
+
 # Build the registration tree from the bottom up.
 # At each level, every pair becomes one node in the next level.
 def under_tree(lst):
@@ -548,6 +567,8 @@ def main() -> None:
     images = [read_rgb_image(path) for path in image_paths]
     # random.seed(42)  # for reproducibility
     # shuffle(images)   # shuffle images
+    #lst=fix_brighness(images)
+    lst=fix_brighness2(images)
 
     print(f'Loaded {len(images)} images.')
     first_reference = reference_sift_pipeline(
