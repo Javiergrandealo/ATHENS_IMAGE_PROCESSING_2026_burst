@@ -474,7 +474,10 @@ def under_tree(lst):
 
     # Display only the image left after all levels.
     final_image = pairs[0]
-    plt.imshow(final_image)
+    #final_image = fix_brighness([final_image])
+    final_image = fix_brighness2([final_image])
+    
+    plt.imshow(final_image[0])
     plt.title('Registered overlay — final image')
     plt.show()
     return final_image
@@ -511,7 +514,9 @@ def secuential(lst):
         )
 
     final_image = registered_images[-1]
-    plt.imshow(final_image)
+    #final_image = fix_brighness([final_image])
+    final_image = fix_brighness2([final_image])
+    plt.imshow(final_image[0])
     plt.title('Registered overlay — final image')
     plt.show()
 
@@ -568,7 +573,7 @@ def main() -> None:
     # random.seed(42)  # for reproducibility
     # shuffle(images)   # shuffle images
     #lst=fix_brighness(images)
-    lst=fix_brighness2(images)
+    #lst=fix_brighness2(images)
 
     print(f'Loaded {len(images)} images.')
     first_reference = reference_sift_pipeline(
