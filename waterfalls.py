@@ -8,12 +8,9 @@ import cv2
 import imageio.v3 as iio
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.patches import Circle
-from scipy.ndimage import gaussian_filter, map_coordinates, maximum_filter, minimum_filter
-from scipy.spatial.distance import cdist
 
-IMAGE_1_PATH = Path('C:/Users/sarap/Downloads/ATHENS_IMAGE_PROCESSING_2026_burst/waterfall0_r/FEA03002.jpg')
-IMAGE_2_PATH = Path('C:/Users/sarap/Downloads/ATHENS_IMAGE_PROCESSING_2026_burst/waterfall0_r/FEA03003.jpg')
 
 
 def read_rgb_image(path: str | Path) -> np.ndarray:
@@ -35,6 +32,7 @@ def read_rgb_image(path: str | Path) -> np.ndarray:
     return rgb
 
 
+
 def to_grayscale(rgb: np.ndarray) -> np.ndarray:
     """Convert 8-bit RGB to encoded grayscale intensities.
 
@@ -53,20 +51,6 @@ def to_grayscale(rgb: np.ndarray) -> np.ndarray:
     return gray
 
 
-image1 = read_rgb_image(IMAGE_1_PATH)
-image2 = read_rgb_image(IMAGE_2_PATH)
-gray1, gray2 = to_grayscale(image1), to_grayscale(image2)
-print('Image 1:', image1.shape, image1.dtype)
-print('Image 2:', image2.shape, image2.dtype)
-
-fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-ax[0].imshow(image1)
-ax[1].imshow(image2)
-for a, title in zip(ax, ['Image 1', 'Image 2']):
-    a.set_title(title)
-    a.axis('off')
-plt.tight_layout()
-plt.show()
 @dataclass
 class RegistrationResult:
     """Outputs of a complete two-image registration pipeline.
@@ -111,7 +95,7 @@ def reference_sift_features(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         Shape (N, 128), float64. These are OpenCV SIFT descriptors.
     """
     gray_u8 = np.uint8(np.round(np.clip(gray, 0, 1) * 255))
-    sift = cv2.SIFT_create(nfeatures=1600)
+    sift = cv2.SIFT_create(nfeatures=1600) # type: ignore
     kp_cv, desc_cv = sift.detectAndCompute(gray_u8, None)
     if not kp_cv:
         return np.empty((0, 3), dtype=np.float64), np.empty((0, 128), dtype=np.float64)
@@ -175,9 +159,9 @@ def estimate_homography(keypoints1: np.ndarray, keypoints2: np.ndarray,
         return None, inliers
     pts1 = np.float32(keypoints1[matches[:, 0], :2])
     pts2 = np.float32(keypoints2[matches[:, 1], :2])
-    homography, mask = cv2.findHomography(pts1, pts2, cv2.RANSAC,
+    homography, mask = cv2.findHomography(pts1, pts2, cv2.RANSAC, # type: ignore
                                         ransacReprojThreshold=threshold,
-                                        maxIters=3000, confidence=0.995)
+                                        maxIters=3000, confidence=0.995) # type: ignore
     if homography is not None and mask is not None:
         inliers = mask.ravel().astype(bool)
     return homography, inliers
@@ -206,37 +190,6 @@ def reference_sift_pipeline(gray1: np.ndarray, gray2: np.ndarray,
     matches = reference_match_descriptors(d1, d2, ratio=ratio)
     H, inliers = estimate_homography(kp1, kp2, matches)
     return RegistrationResult(kp1, kp2, d1, d2, matches, H, inliers)
-def plot_keypoints(rgb: np.ndarray, keypoints: np.ndarray,
-                   title: str = '', max_points: int = 300) -> None:
-    """Overlay scale-dependent circles on an RGB image.
-
-    Parameters
-    ----------
-    rgb : np.ndarray
-        Input RGB image, shape (H, W, 3), uint8.
-    keypoints : np.ndarray
-        Keypoint array of shape (N, 3), rows (x, y, sigma).
-    title : str, optional
-        Figure title.
-    max_points : int, optional
-        Maximum number of plotted circles.
-
-    Returns
-    -------
-    None
-        Displays a Matplotlib figure.
-    """
-    fig, ax = plt.subplots(figsize=(7, 4.8))
-    ax.imshow(rgb)
-    for x, y, sigma in keypoints[:max_points]:
-        ax.add_patch(Circle((x, y), max(2.0, 1.3 * sigma),
-                            fill=False, linewidth=0.8, edgecolor='cyan', alpha=0.72))
-    ax.set_title(f'{title} ({len(keypoints)} keypoints)')
-    ax.axis('off')
-    plt.tight_layout()
-    plt.show()
-
-
 def plot_matches(rgb1: np.ndarray, rgb2: np.ndarray,
                  keypoints1: np.ndarray, keypoints2: np.ndarray,
                  matches: np.ndarray, inliers: np.ndarray | None = None,
@@ -283,10 +236,10 @@ def plot_matches(rgb1: np.ndarray, rgb2: np.ndarray,
     ax.axis('off')
     plt.tight_layout()
     plt.show()
+    
 
-
-def plot_registration(rgb1: np.ndarray, rgb2: np.ndarray,
-                      H: np.ndarray | None) -> None:
+def pairwise_registration(rgb1: np.ndarray, rgb2: np.ndarray,
+                      H: np.ndarray | None) -> np.ndarray | None:
     """Show the homography-warped image 1 beside image 2 and their overlay.
 
     Parameters
@@ -299,12 +252,14 @@ def plot_registration(rgb1: np.ndarray, rgb2: np.ndarray,
 
     Returns
     -------
-    None
+    np.ndarray
+        The combined registered image.
         Displays a three-panel Matplotlib figure (or a failure message).
     """
+    img_combined = None
     if H is None:
         print('Registration unavailable: no robust homography was estimated.')
-        return
+        return img_combined
     h2, w2 = rgb2.shape[:2]
     warped = cv2.warpPerspective(rgb1, H, (w2, h2))
     valid = cv2.warpPerspective(np.full(rgb1.shape[:2], 255, dtype=np.uint8),
@@ -312,14 +267,9 @@ def plot_registration(rgb1: np.ndarray, rgb2: np.ndarray,
     overlay = rgb2.astype(np.float64)
     overlay[valid] = (0.5 * warped[valid].astype(np.float64) +
                       0.5 * rgb2[valid].astype(np.float64))
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-    for ax, image, title in zip(axes, (warped, rgb2, overlay.astype(np.uint8)),
-                                ('Warped image 1', 'Target image 2', 'Registered overlay')):
-        ax.imshow(image)
-        ax.set_title(title)
-        ax.axis('off')
-    plt.tight_layout()
-    plt.show()
+    img_combined=overlay.astype(np.uint8)
+
+    return img_combined
 
 
 def print_registration_summary(result: RegistrationResult, label: str = '') -> None:
@@ -340,13 +290,42 @@ def print_registration_summary(result: RegistrationResult, label: str = '') -> N
     print(f'{label}: {len(result.keypoints1)} / {len(result.keypoints2)} keypoints, '
           f'{len(result.matches)} matches, {int(result.inliers.sum())} inliers; '
           f'homography: {"yes" if result.homography is not None else "no"}')
-reference = reference_sift_pipeline(gray1, gray2)
-print_registration_summary(reference, 'OpenCV SIFT')
-plot_keypoints(image1, reference.keypoints1, 'Reference keypoints — image 1')
-plot_matches(image1, image2, reference.keypoints1, reference.keypoints2,
-             reference.matches, reference.inliers)
-plot_registration(image1, image2, reference.homography)
-def show_gray(ax: Axes, image: np.ndarray, title: str = '', *,
+
+
+def plot_registration_process(
+    rgb1: np.ndarray,
+    rgb2: np.ndarray,
+    result: RegistrationResult,
+    label: str,
+) -> None:
+    """Report one sequential registration step."""
+    del rgb1, rgb2
+    print_registration_summary(result, label)
+    
+    
+def linear_to_srgb(values: np.ndarray) -> np.ndarray:
+    """Encode linear-light values for standard sRGB display.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Linear-light values (usually shape (H, W) or (H, W, 3)).
+        Values outside [0, 1] will be clipped.
+
+    Returns
+    -------
+    encoded : np.ndarray
+        sRGB-encoded values in [0, 1], same shape as ``values``,
+        dtype float64.
+    """
+    values = np.clip(np.asarray(values, dtype=np.float64), 0.0, 1.0)
+    encoded = np.where(values <= 0.0031308,
+                       12.92 * values,
+                       1.055 * values ** (1.0 / 2.4) - 0.055)
+    return encoded
+
+
+def show_gray(ax: Axes, image: np.ndarray, title: str = '',
               linear: bool = True) -> None:
     """Display a grayscale image on a Matplotlib axis.
 
@@ -400,7 +379,7 @@ def image_histogram(ax: Axes, image: np.ndarray, title: str = '', *,
 
 
 def compare_gray(images: Sequence[np.ndarray], titles: Sequence[str], *,
-                 bins: int = 128) -> None:
+                bins: int = 128) -> None:
     """Compare grayscale images and their histograms in a two-row figure.
 
     Parameters
@@ -425,3 +404,168 @@ def compare_gray(images: Sequence[np.ndarray], titles: Sequence[str], *,
         image_histogram(axes[1, i], image, bins=bins)
     plt.tight_layout()
     plt.show()
+
+# Build the registration tree from the bottom up.
+# At each level, every pair becomes one node in the next level.
+def under_tree(lst):
+    registration_tree = [lst]
+    level = lst
+    level_number = 0
+
+    while len(level) > 1:
+        next_level = []
+
+        i = 0
+        while i + 1 < len(level):
+            reference = reference_sift_pipeline(
+                to_grayscale(level[i]),
+                to_grayscale(level[i + 1]),
+            )
+            next_pair = pairwise_registration(
+                level[i],
+                level[i + 1],
+                reference.homography,
+            )
+
+            if next_pair is None:
+                raise RuntimeError(
+                    f'Registration unavailable at level {level_number}: '
+                    f'pair ({i}, {i + 1})'
+                )
+
+            next_level.append(next_pair)
+            # To display all intermediate registered images, uncomment:
+            # plt.imshow(next_pair)
+            # plt.title(
+            #     f'Registered overlay — level {level_number}, '
+            #     f'node pair ({i}, {i + 1})'
+            # )
+            # plt.show()
+            i += 2
+
+        # An unmatched image is promoted unchanged to the next level.
+        if i < len(level):
+            next_level.append(level[i])
+
+        registration_tree.append(next_level)
+        level = next_level
+        level_number += 1
+
+    pairs = level
+
+    # Display only the image left after all levels.
+    final_image = pairs[0]
+    plt.imshow(final_image)
+    plt.title('Registered overlay — final image')
+    plt.show()
+    return final_image
+
+
+
+def secuential(lst):
+    # Sequentially register each image to the previous one.
+    registered_images = [lst[0]]  # Start with the first image.
+
+    for i in range(1, len(lst)):
+        reference = reference_sift_pipeline(
+            to_grayscale(registered_images[-1]),
+            to_grayscale(lst[i]),
+        )
+        next_pair = pairwise_registration(
+            registered_images[-1],
+            lst[i],
+            reference.homography,
+        )
+
+        if next_pair is None:
+            raise RuntimeError(
+                f'Registration unavailable at index {i}: '
+                f'pair ({i - 1}, {i})'
+            )
+
+        registered_images.append(next_pair)
+        plot_registration_process(
+            registered_images[-2],
+            lst[i],
+            reference,
+            f'Sequential — step {i}',
+        )
+
+    final_image = registered_images[-1]
+    plt.imshow(final_image)
+    plt.title('Registered overlay — final image')
+    plt.show()
+
+    return final_image
+
+
+def plot_keypoints(rgb: np.ndarray, keypoints: np.ndarray, title: str) -> None:
+    fig, ax = plt.subplots(figsize=(7, 4.8))
+    ax.imshow(rgb)
+    for x, y, sigma in keypoints[:300]:
+        ax.add_patch(Circle((x, y), max(2.0, 1.3 * sigma),
+                            fill=False, linewidth=0.8, edgecolor='cyan',
+                            alpha=0.72))
+    ax.set_title(f'{title} ({len(keypoints)} keypoints)')
+    ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_registration(rgb1: np.ndarray, rgb2: np.ndarray,
+                      homography: np.ndarray | None) -> None:
+    if homography is None:
+        print('Registration unavailable: no robust homography was estimated.')
+        return
+    h2, w2 = rgb2.shape[:2]
+    warped = cv2.warpPerspective(rgb1, homography, (w2, h2))
+    valid = cv2.warpPerspective(
+        np.full(rgb1.shape[:2], 255, dtype=np.uint8),
+        homography,
+        (w2, h2),
+    ) > 0
+    overlay = rgb2.astype(np.float64)
+    overlay[valid] = (0.5 * warped[valid] +
+                       0.5 * rgb2[valid])
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    for ax, image, title in zip(
+        axes,
+        (warped, rgb2, overlay.astype(np.uint8)),
+        ('Warped image 1', 'Target image 2', 'Registered overlay'),
+    ):
+        ax.imshow(image)
+        ax.set_title(title)
+        ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+def main() -> None:
+    image_paths = sorted(
+        Path(__file__).parent.joinpath('waterfall1_r').glob('*.JPG'),
+        key=lambda path: int(path.stem.removeprefix('FEA')),
+    )
+    images = [read_rgb_image(path) for path in image_paths]
+
+    print(f'Loaded {len(images)} images.')
+    first_reference = reference_sift_pipeline(
+        to_grayscale(images[0]),
+        to_grayscale(images[1]),
+    )
+    print_registration_summary(first_reference, 'OpenCV SIFT')
+    plot_keypoints(images[0], first_reference.keypoints1,
+                   'Reference keypoints — image 1')
+    plot_matches(images[0], images[1], first_reference.keypoints1,
+                 first_reference.keypoints2, first_reference.matches,
+                 first_reference.inliers)
+    plot_registration(images[0], images[1], first_reference.homography)
+
+    print('Running tree registration...')
+    under_tree(images)
+
+    print('Running sequential registration...')
+    secuential(images)
+
+
+if __name__ == '__main__':
+    main()
